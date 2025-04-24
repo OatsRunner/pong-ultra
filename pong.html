@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pong-Ultra Game</title>
+  <style>
+    #gameContainer {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+    }
+    canvas { 
+      background: linear-gradient(to bottom, #1e3c72, #2a5298); /* 渐变背景 */
+      display: block; 
+      margin: auto; 
+      border: 5px solid white; /* 添加边框 */
+      box-shadow: 0 0 20px rgba(255, 255, 255, 0.5); /* 添加光晕效果 */
+    }
+    body { 
+      margin: 0; 
+      overflow: hidden; 
+      font-family: Arial, sans-serif; 
+      background: #000; /* 背景颜色 */
+      color: white; 
+      text-align: center; 
+    }
+    #controls {
+      position: relative;
+      margin-bottom: 10px;
+    }
+    button {
+      padding: 10px 20px;
+      font-size: 16px;
+      margin: 0 10px;
+      cursor: pointer;
+      border: none;
+      border-radius: 5px;
+      background: #000005;
+      color: white;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+      transition: background 0.3s, transform 0.2s;
+    }
+    button:hover {
+      background: #63b8ff;
+      transform: scale(1.1);
+    }
+    button:active {
+      background: #4682b4;
+    }
+    #scoreboard {
+      position: relative;
+      font-size: 24px;
+      font-weight: bold;
+      margin-bottom: 20px;
+    }
+    /* 连击计数器样式 */
+    #comboCounter {
+      font-size: 24px;
+      font-weight: bold;
+      color: white;
+      text-align: center;
+      margin-top: 10px;
+    }
+    /* 扫描线效果 */
+    #scanlines {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none; /* 确保扫描线不会影响用户交互 */
+      background: repeating-linear-gradient(
+        to bottom,
+        rgba(255, 255, 255, 0.05),
+        rgba(255, 255, 255, 0.05) 2px,
+        transparent 2px,
+        transparent 8px
+      );
+      animation: scanlineMove 2s linear infinite; /* 扫描线移动动画 */
+    }
+
+    /* 扫描线移动动画 */
+    @keyframes scanlineMove {
+      0% {
+        transform: translateY(0);
+      }
+      100% {
+        transform: translateY(4px);
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="gameContainer">
+    <div id="controls">
+      <button id="startPauseBtn">Pause</button> <!-- 暂停按钮 -->
+      <button id="resetBtn">Reset</button> <!-- 重置按钮 -->
+      <button id="backToTitleBtn">Back to Title</button> <!-- 回到标题页面按钮 -->
+    </div>
+    <div id="scoreboard">
+      Player 1: <span id="playerScore">0</span> | Player 2: <span id="aiScore">0</span>
+    </div>
+    <canvas id="pong" width="1280" height="720"></canvas>
+    <!-- 在游戏画布下方添加连击计数器 -->
+    <div id="comboCounter">Combo 0</div>
+  </div>
+  <div id="scanlines"></div>
+  <script>
+    const canvas = document.getElementById('pong');
+    const ctx = canvas.getContext('2d');
+    const startPauseBtn = document.getElementById('startPauseBtn');
+    const resetBtn = document.getElementById('resetBtn');
+    const backToTitleBtn = document.getElementById('backToTitleBtn');
+    const playerScoreEl = document.getElementById('playerScore');
+    const aiScoreEl = document.getElementById('aiScore');
+    const gameContainer = document.getElementById('gameContainer');
+
+    const paddleWidth = 20, paddleHeight = 100, ballSize = 15;
+    const player1 = { x: 10, y: canvas.height / 2 - paddleHeight / 2, dy: 0, score: 0 };
+    const player2 = { x: canvas.width - 30, y: canvas.height / 2 - paddleHeight / 2, dy: 0, score: 0 };
+
+    let isPaused = false; // 游戏默认开始
+    const gameMode = localStorage.getItem('gameMode') || 'ai'; // 从 localStorage 获取模式
+    const isPvP = gameMode === 'pvp'; // 根据模式设置是否为双人对战
+
+    const hitSound = new Audio('lib/hit.wav'); // 碰撞音效
+    const scoreSound = new Audio('lib/score.wav'); // 得分音效
+    const bgMusic = new Audio('lib/background.mp3'); // 背景音乐
+    bgMusic.loop = true;
+    bgMusic.play(); // 自动播放背景音乐
+
+    // 初始化小球速度
+    const initialSpeed = 4; // 初始速度
+    let ballSpeed = initialSpeed; // 当前速度
+
+    // 初始化小球
+    let ball = { x: canvas.width / 2, y: canvas.height / 2, dx: 4, dy: 4, isWaiting: false };
+
+    // 初始化砖块数组
+    let bricks = [];
+
+    // 初始化连击计数器
+    let comboCount = 0;
+    const comboCounterEl = document.getElementById('comboCounter');
+
+    // 初始化粒子数组
+    let particles = [];
+
+    // 更新连击计数器
+    function updateComboCounter() {
+        comboCounterEl.textContent = `Combo ${comboCount}`;
+        const baseFontSize = 24; // 基础字体大小
+        const maxFontSize = 72; // 最大字体大小
+        const newFontSize = Math.min(baseFontSize + comboCount * 2, maxFontSize); // 根据连击次数动态调整字体大小
+        comboCounterEl.style.fontSize = `${newFontSize}px`;
+    }
+
+    // 在小球与砖块或挡板碰撞时增加连击计数
+    function incrementCombo() {
+        comboCount++;
+        updateComboCounter();
+    }
+
+    // 在小球出界时重置连击计数
+    function resetCombo() {
+        comboCount = 0;
+        updateComboCounter();
+    }
+
+    // 生成随机砖块
+    function generateBrick() {
+        const brickWidth = 100;
+        const brickHeight = 20;
+        const brickX = Math.random() * (canvas.width - brickWidth); // 随机水平位置
+        const brickY = Math.random() * (canvas.height); // 随机垂直位置
+
+        // 随机确定砖块颜色
+        let color = 'Silver'; // 默认颜色为银色
+        const randomChance = Math.random();
+        if (randomChance < 0.1) {
+            color = 'PaleTurquoise'; // 10%几率生成浅绿松石砖块
+        } else if (randomChance < 0.2) {
+            color = 'PaleVioletRed'; // 10%几率生成浅紫罗兰红砖块
+        } else if (randomChance < 0.4) {
+            color = 'MediumSeaGreen'; // 20%几率生成中海绿色砖块
+        }
+
+        bricks.push({ x: brickX, y: brickY, width: brickWidth, height: brickHeight, color });
+    }
+
+    // 绘制砖块
+    function drawBricks() {
+        bricks.forEach(brick => {
+            drawRect(brick.x, brick.y, brick.width, brick.height, brick.color); // 根据砖块的颜色绘制
+        });
+    }
+
+    // 检测小球与砖块的碰撞
+    function checkBrickCollision() {
+        bricks = bricks.filter(brick => {
+            if (
+                ball.x + ballSize > brick.x &&
+                ball.x - ballSize < brick.x + brick.width &&
+                ball.y + ballSize > brick.y &&
+                ball.y - ballSize < brick.y + brick.height
+            ) {
+                incrementCombo(); // 增加连击计数
+
+                // 根据砖块颜色触发不同效果
+                if (brick.color === 'PaleTurquoise') {
+                    ballSpeed = Math.max(ballSpeed - 2, 2); // 大幅降低速度，最低为2
+                } else if (brick.color === 'PaleVioletRed') {
+                    ballSpeed += 2; // 大幅提高速度
+                } else if (brick.color === 'MediumSeaGreen') {
+                    // 使小球以完全随机的角度反弹，且与 y 轴至少呈现 30°角
+                    let randomAngle;
+                    do {
+                        randomAngle = Math.random() * Math.PI * 2; // 随机角度（0 到 360°）
+                    } while (Math.abs(Math.sin(randomAngle)) < Math.sin(Math.PI / 6)); // 确保与 y 轴至少呈现 30°角
+
+                    ball.dx = ballSpeed * Math.cos(randomAngle);
+                    ball.dy = ballSpeed * Math.sin(randomAngle);
+                }
+
+                // 计算入射角并反射（非 MediumSeaGreen 砖块）
+                if (brick.color !== 'MediumSeaGreen') {
+                    if (ball.y < brick.y || ball.y > brick.y + brick.height) {
+                        ball.dy *= -1; // 垂直反射
+                    } else {
+                        ball.dx *= -1; // 水平反射
+                    }
+                }
+
+                hitSound.play(); // 播放碰撞音效
+                return false; // 移除被碰撞的砖块
+            }
+            return true; // 保留未碰撞的砖块
+        });
+    }
+
+    // 生成粒子效果
+    function generateBallParticles(x, y) {
+        const particleCount = Math.min(Math.floor(ballSpeed * 2), 20); // 根据速度动态调整粒子数量，最大为 20
+        const particleColor = ballSpeed < 4.5 ? 'DeepSkyBlue' : ballSpeed > 5.5 ? 'Crimson' : 'white'; // 根据小球颜色设置粒子颜色
+
+        for (let i = 0; i < particleCount; i++) {
+            particles.push({
+                x: x,
+                y: y,
+                dx: (Math.random() - 0.5) * 2, // 随机水平速度
+                dy: (Math.random() - 0.5) * 2, // 随机垂直速度
+                size: Math.random() * 3 + 1, // 随机粒子大小
+                color: particleColor, // 粒子颜色跟随小球颜色
+                life: 30 // 粒子寿命
+            });
+        }
+    }
+
+    // 绘制粒子效果
+    function drawParticles() {
+        particles.forEach((particle, index) => {
+            ctx.fillStyle = particle.color;
+            ctx.beginPath();
+            ctx.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2);
+            ctx.fill();
+
+            // 更新粒子位置
+            particle.x += particle.dx;
+            particle.y += particle.dy;
+            particle.life--;
+
+            // 移除寿命耗尽的粒子
+            if (particle.life <= 0) {
+                particles.splice(index, 1);
+            }
+        });
+    }
+
+    function drawRect(x, y, w, h, color = 'white') {
+        ctx.fillStyle = color;
+        ctx.fillRect(x, y, w, h);
+    }
+
+    function drawCircle(x, y, r) {
+        // 根据小球速度设置颜色
+        let color;
+        if (ballSpeed < 4.5) {
+            color = 'DeepSkyBlue'; // 深天蓝
+        } else if (ballSpeed > 5.5) {
+            color = 'Crimson'; // 绯红
+        } else {
+            color = 'white'; // 白色
+        }
+
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    function shakeScreen() {
+        const intensity = 5; // 晃动强度
+        let count = 0;
+        const interval = setInterval(() => {
+            const offsetX = (Math.random() * intensity * 2 - intensity).toFixed(2);
+            const offsetY = (Math.random() * intensity * 2 - intensity).toFixed(2);
+            gameContainer.style.transform = `translate(-50%, -50%) translate(${offsetX}px, ${offsetY}px)`; // 保持居中并添加晃动
+            count++;
+            if (count > 10) {
+                clearInterval(interval);
+                gameContainer.style.transform = 'translate(-50%, -50%)'; // 恢复居中
+            }
+        }, 50);
+    }
+
+    function resetBall() {
+        ball.isWaiting = true; // 设置小球为等待状态
+        ball.x = canvas.width / 2; // 水平位置固定在中轴线上
+        ball.y = Math.random() * (canvas.height - 2 * ballSize) + ballSize; // 垂直方向随机位置
+
+        // 随机方向
+        const angle = Math.random() * Math.PI / 2 - Math.PI / 4; // 随机角度（-45°到45°）
+        ballSpeed = initialSpeed; // 重置速度
+        ball.dx = (Math.random() > 0.5 ? 1 : -1) * ballSpeed * Math.cos(angle);
+        ball.dy = ballSpeed * Math.sin(angle);
+
+        // 延迟 1 秒后开始移动
+        setTimeout(() => {
+            ball.isWaiting = false;
+        }, 1000);
+    }
+
+    function updateScore() {
+        playerScoreEl.textContent = player1.score;
+        aiScoreEl.textContent = player2.score;
+    }
+
+    function update() {
+        if (isPaused) return;
+
+        // 小球移动时生成粒子效果
+        if (!ball.isWaiting) {
+            generateBallParticles(ball.x, ball.y);
+        }
+
+        // Move player 1 paddle
+        player1.y += player1.dy;
+        player1.y = Math.max(0, Math.min(canvas.height - paddleHeight, player1.y));
+
+        // Move player 2 paddle (AI or player-controlled)
+        if (isPvP) {
+            player2.y += player2.dy;
+            player2.y = Math.max(0, Math.min(canvas.height - paddleHeight, player2.y));
+        } else {
+            player2.y += ball.y > player2.y + paddleHeight / 2 ? 4 : -4;
+            player2.y = Math.max(0, Math.min(canvas.height - paddleHeight, player2.y));
+        }
+
+        // 如果小球处于等待状态，则不更新其位置
+        if (ball.isWaiting) return;
+
+        // Move ball
+        ball.x += ball.dx;
+        ball.y += ball.dy;
+
+        // Ball collision with top/bottom walls
+        if (ball.y <= 0 || ball.y >= canvas.height) {
+            ball.dy *= -1;
+            hitSound.play();
+            shakeScreen(); // 增加晃动效果
+        }
+
+        // Ball collision with paddles
+        if (
+            (ball.x <= player1.x + paddleWidth && ball.y >= player1.y && ball.y <= player1.y + paddleHeight) ||
+            (ball.x >= player2.x - ballSize && ball.y >= player2.y && ball.y <= player2.y + paddleHeight)
+        ) {
+            incrementCombo(); // 增加连击计数
+            // 计算入射角并反射
+            const paddle = ball.x <= canvas.width / 2 ? player1 : player2;
+            const relativeIntersectY = ball.y - (paddle.y + paddleHeight / 2);
+            const normalizedRelativeIntersectY = relativeIntersectY / (paddleHeight / 2);
+            const bounceAngle = normalizedRelativeIntersectY * (Math.PI / 4); // 最大反射角为 45°
+
+            ball.dx = ball.dx > 0 ? -Math.abs(ballSpeed * Math.cos(bounceAngle)) : Math.abs(ballSpeed * Math.cos(bounceAngle));
+            ball.dy = ballSpeed * Math.sin(bounceAngle);
+
+            ballSpeed += 0.5; // 每次碰撞后速度增加
+            hitSound.play(); // 播放碰撞音效
+            shakeScreen(); // 增加晃动效果
+
+            // 每次挡板碰撞后生成新的砖块
+            generateBrick();
+        }
+
+        // 检测小球与砖块的碰撞
+        checkBrickCollision();
+
+        // Reset ball if out of bounds and update score
+        if (ball.x <= 0) {
+            player2.score++;
+            updateScore();
+            resetBall();
+            resetCombo(); // 重置连击计数
+            scoreSound.play();
+        } else if (ball.x >= canvas.width) {
+            player1.score++;
+            updateScore();
+            resetBall();
+            resetCombo(); // 重置连击计数
+            scoreSound.play();
+        }
+    }
+
+    function render() {
+        drawRect(0, 0, canvas.width, canvas.height, 'black'); // 清屏
+        drawParticles(); // 绘制粒子效果
+        drawRect(player1.x, player1.y, paddleWidth, paddleHeight); // Player 1 paddle
+        drawRect(player2.x, player2.y, paddleWidth, paddleHeight); // Player 2 paddle
+        drawCircle(ball.x, ball.y, ballSize); // Ball
+        drawBricks(); // 绘制砖块
+    }
+
+    function gameLoop() {
+        update();
+        render();
+        requestAnimationFrame(gameLoop);
+    }
+
+    // 暂停按钮功能
+    startPauseBtn.addEventListener('click', () => {
+        isPaused = !isPaused;
+        if (!isPaused) {
+            bgMusic.play();
+            startPauseBtn.textContent = 'Pause';
+        } else {
+            bgMusic.pause();
+            startPauseBtn.textContent = 'Start';
+        }
+    });
+
+    // 重置按钮功能
+    resetBtn.addEventListener('click', () => {
+        player1.score = 0;
+        player2.score = 0;
+        player1.y = canvas.height / 2 - paddleHeight / 2;
+        player2.y = canvas.height / 2 - paddleHeight / 2;
+        bricks = []; // 清空砖块数组
+        resetBall();
+        resetCombo(); // 重置连击计数
+        updateScore();
+    });
+
+    // 回到标题页面按钮功能
+    backToTitleBtn.addEventListener('click', () => {
+        bgMusic.pause(); // 停止背景音乐
+        window.location.href = 'title.html'; // 跳转到标题页面
+    });
+
+    // 键盘控制
+    document.addEventListener('keydown', e => {
+        if (e.key === 'w' || e.key === 'W') player1.dy = -6;
+        if (e.key === 's' || e.key === 'S') player1.dy = 6;
+
+        if (isPvP) {
+            if (e.key === 'ArrowUp') player2.dy = -6;
+            if (e.key === 'ArrowDown') player2.dy = 6;
+        }
+    });
+
+    document.addEventListener('keyup', e => {
+        if (e.key === 'w' || e.key === 'W' || e.key === 's' || e.key === 'S') player1.dy = 0;
+        if (e.key === 'ArrowUp' || e.key === 'ArrowDown') player2.dy = 0;
+    });
+
+    resetBall(); // 初始化小球
+    generateBrick(); // 初始化时生成一个砖块
+    gameLoop(); // 开始游戏循环
+  </script>
+  <script>
+    // 创建静音按钮
+    const muteBtn = document.createElement('button');
+    muteBtn.id = 'muteBtn';
+    muteBtn.textContent = '🔊'; // 默认显示为音量图标
+    muteBtn.style.position = 'absolute';
+    muteBtn.style.top = '10px'; // 相对于 #gameContainer 的顶部
+    muteBtn.style.left = '10px'; // 相对于 #gameContainer 的左侧
+    muteBtn.style.width = '50px';
+    muteBtn.style.height = '50px';
+    muteBtn.style.border = '5px solid white'; // 设置与 #gameContainer 一致的白色边框
+    muteBtn.style.borderRadius = '10px'; // 圆角方形
+    muteBtn.style.background = '#000000'; // 设置背景颜色为黑色
+    muteBtn.style.color = 'white'; // 保持文字颜色为白色
+    muteBtn.style.fontSize = '20px';
+    muteBtn.style.cursor = 'pointer';
+    muteBtn.style.boxShadow = '0 0 20px rgba(255, 255, 255, 0.5)'; // 设置与 #gameContainer 一致的发光效果
+    muteBtn.style.zIndex = '10'; // 确保按钮位于内容上方
+
+    // 修改静音按钮样式，确保图标在按钮内部完全居中显示
+    muteBtn.style.fontSize = '24px'; // 调整字体大小
+    muteBtn.style.lineHeight = '50px'; // 设置行高与按钮高度一致，使图标垂直居中
+    muteBtn.style.textAlign = 'center'; // 设置文本水平居中
+    muteBtn.style.display = 'flex'; // 使用 Flexbox 布局
+    muteBtn.style.justifyContent = 'center'; // 水平居中
+    muteBtn.style.alignItems = 'center'; // 垂直居中
+    muteBtn.style.padding = '0'; // 移除内边距，避免图标偏移
+
+    document.getElementById('gameContainer').appendChild(muteBtn);
+
+    // 初始化静音状态
+    let isMuted = localStorage.getItem('isMuted') === 'true'; // 从 localStorage 获取静音状态
+    if (isMuted) {
+      bgMusic.pause();
+      muteBtn.textContent = '🔇'; // 显示静音图标
+    } else {
+      bgMusic.play();
+      muteBtn.textContent = '🔊'; // 显示音量图标
+    }
+
+    // 静音按钮点击事件
+    muteBtn.addEventListener('click', () => {
+      isMuted = !isMuted;
+      localStorage.setItem('isMuted', isMuted); // 将静音状态保存到 localStorage
+      if (isMuted) {
+        bgMusic.pause();
+        muteBtn.textContent = '🔇'; // 显示静音图标
+      } else {
+        bgMusic.play();
+        muteBtn.textContent = '🔊'; // 显示音量图标
+      }
+    });
+  </script>
+</body>
+</html>

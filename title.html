@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PONG-ULTRA</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      background: linear-gradient(to bottom, #000000, #000000); /* 与 pong.html 的背景一致 */
+      font-family: Arial, sans-serif;
+      color: white;
+      text-align: center;
+    }
+    #titleContainer {
+      width: 1280px;
+      height: 720px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      border: 5px solid white; /* 与 pong.html 的边框一致 */
+      box-shadow: 0 0 20px rgba(255, 255, 255, 0.5); /* 添加光晕效果 */
+      background: rgba(0, 0, 0, 0.8); /* 半透明背景 */
+      position: relative; /* 设置父容器为相对定位 */
+    }
+    h1 {
+      font-size: 64px;
+      margin-bottom: 50px;
+      text-shadow: 0 4px 6px rgba(0, 0, 0, 0.3); /* 添加阴影效果 */
+    }
+    button {
+      width: 200px; /* 固定宽度 */
+      height: 60px; /* 固定高度 */
+      padding: 0; /* 移除内边距，确保尺寸一致 */
+      font-size: 24px;
+      margin: 10px;
+      cursor: pointer;
+      border: none;
+      border-radius: 5px;
+      background: #000000; /* 按钮颜色与 pong.html 一致 */
+      color: white;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3); /* 添加按钮阴影 */
+      transition: background 0.3s, transform 0.2s;
+    }
+    button:hover {
+      background: #63b8ff; /* 悬停时的颜色 */
+      transform: scale(1.1); /* 悬停时放大效果 */
+    }
+    button:active {
+      background: #4682b4; /* 点击时的颜色 */
+    }
+
+    /* 抖动动画 */
+    @keyframes shake {
+      0% { transform: translate(0, 0); }
+      25% { transform: translate(-5px, 5px); }
+      50% { transform: translate(5px, -5px); }
+      75% { transform: translate(-5px, -5px); }
+      100% { transform: translate(0, 0); }
+    }
+
+    /* 为 titleContainer 添加抖动效果的类 */
+    .shake {
+      animation: shake 0.5s ease-in-out;
+    }
+
+    /* 扫描线效果 */
+    #scanlines {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none; /* 确保扫描线不会影响用户交互 */
+      background: repeating-linear-gradient(
+        to bottom,
+        rgba(255, 255, 255, 0.05),
+        rgba(255, 255, 255, 0.05) 2px,
+        transparent 2px,
+        transparent 8px
+      );
+      animation: scanlineMove 2s linear infinite; /* 扫描线移动动画 */
+    }
+
+    /* 扫描线移动动画 */
+    @keyframes scanlineMove {
+      0% {
+        transform: translateY(0);
+      }
+      100% {
+        transform: translateY(4px);
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="titleContainer">
+    <h1>PONG-ULTRA</h1>
+    <button id="aiModeBtn">人机对战</button>
+    <button id="pvpModeBtn">双人对战</button>
+    <button id="settingsBtn">设置</button>
+    <div id="controls"></div>
+  </div>
+  <div id="scanlines"></div>
+  <script>
+    // 背景音乐
+    const bgMusic = new Audio('lib/background.mp3');
+    bgMusic.loop = true;
+    bgMusic.play();
+
+    // 获取按钮
+    const aiModeBtn = document.getElementById('aiModeBtn');
+    const pvpModeBtn = document.getElementById('pvpModeBtn');
+    const settingsBtn = document.getElementById('settingsBtn');
+
+    // 点击“人机对战”按钮，跳转到游戏页面并停止背景音乐
+    aiModeBtn.addEventListener('click', () => {
+      bgMusic.pause(); // 停止背景音乐
+      localStorage.setItem('gameMode', 'ai'); // 保存模式到 localStorage
+      window.location.href = 'pong.html'; // 跳转到游戏页面
+    });
+
+    // 点击“双人对战”按钮，跳转到游戏页面并停止背景音乐
+    pvpModeBtn.addEventListener('click', () => {
+      bgMusic.pause(); // 停止背景音乐
+      localStorage.setItem('gameMode', 'pvp'); // 保存模式到 localStorage
+      window.location.href = 'pong.html'; // 跳转到游戏页面
+    });
+
+    // 为 titleContainer 添加抖动效果
+    function shakeTitleContainer() {
+      const titleContainer = document.getElementById('titleContainer');
+      titleContainer.classList.add('shake'); // 添加抖动类
+      setTimeout(() => {
+        titleContainer.classList.remove('shake'); // 在动画结束后移除抖动类
+      }, 500); // 动画持续时间为 0.5 秒
+    }
+
+    // 每隔一段时间自动触发抖动效果
+    setInterval(() => {
+      shakeTitleContainer();
+    }, 1000); // 每隔 5 秒触发一次抖动
+
+    // 示例：在点击“设置”按钮时触发抖动效果
+    settingsBtn.addEventListener('click', () => {
+      shakeTitleContainer();
+      alert('这里没想好放什么><');
+    });
+
+    // 获取按钮
+    const startPauseBtn = document.getElementById('startPauseBtn');
+    const resetBtn = document.getElementById('resetBtn');
+    const backToTitleBtn = document.getElementById('backToTitleBtn');
+
+    // 添加“申明”按钮
+    const disclaimerBtn = document.createElement('button');
+    disclaimerBtn.id = 'disclaimerBtn';
+    disclaimerBtn.textContent = '申明';
+    disclaimerBtn.style.marginTop = '10px';
+    document.getElementById('controls').appendChild(disclaimerBtn);
+
+    // 点击“申明”按钮，读取并显示 alert.txt 的内容
+    disclaimerBtn.addEventListener('click', async () => {
+      try {
+        const response = await fetch('alert.txt'); // 读取 alert.txt 文件
+        if (!response.ok) throw new Error('无法加载申明内容');
+        const text = await response.text();
+        alert(text); // 弹出文件内容
+      } catch (error) {
+        alert('加载申明失败：' + error.message);
+      }
+    });
+
+    // 创建静音按钮
+    const muteBtn = document.createElement('button');
+    muteBtn.id = 'muteBtn';
+    muteBtn.textContent = '🔊'; // 默认显示为音量图标
+    muteBtn.style.position = 'absolute';
+    muteBtn.style.top = '10px'; // 相对于 #titleContainer 的顶部
+    muteBtn.style.left = '10px'; // 相对于 #titleContainer 的左侧
+    muteBtn.style.width = '50px';
+    muteBtn.style.height = '50px';
+    muteBtn.style.border = '5px solid white'; // 设置与 #titleContainer 一致的白色边框
+    muteBtn.style.borderRadius = '10px'; // 圆角方形
+    muteBtn.style.background = '#000000'; // 设置背景颜色为黑色
+    muteBtn.style.color = 'white'; // 保持文字颜色为白色
+    muteBtn.style.fontSize = '20px';
+    muteBtn.style.cursor = 'pointer';
+    muteBtn.style.boxShadow = '0 0 20px rgba(255, 255, 255, 0.5)'; // 设置与 #titleContainer 一致的发光效果
+    muteBtn.style.zIndex = '10'; // 确保按钮位于内容上方
+    document.getElementById('titleContainer').appendChild(muteBtn);
+
+    // 初始化静音状态
+    let isMuted = localStorage.getItem('isMuted') === 'true'; // 从 localStorage 获取静音状态
+    if (isMuted) {
+      bgMusic.pause();
+      muteBtn.textContent = '🔇'; // 显示静音图标
+    } else {
+      bgMusic.play();
+      muteBtn.textContent = '🔊'; // 显示音量图标
+    }
+
+    // 静音按钮点击事件
+    muteBtn.addEventListener('click', () => {
+      isMuted = !isMuted;
+      localStorage.setItem('isMuted', isMuted); // 将静音状态保存到 localStorage
+      if (isMuted) {
+        bgMusic.pause();
+        muteBtn.textContent = '🔇'; // 显示静音图标
+      } else {
+        bgMusic.play();
+        muteBtn.textContent = '🔊'; // 显示音量图标
+      }
+    });
+  </script>
+</body>
+</html>
